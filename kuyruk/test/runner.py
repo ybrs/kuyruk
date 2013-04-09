@@ -2,92 +2,71 @@ import os
 import sys
 import subprocess
 from time import time, sleep
-from subprocess import PIPE, Popen
-from threading  import Thread
+from threading import Thread
+from Queue import Queue, Empty
+from subprocess import PIPE, STDOUT
 
 
-class Kopen(Popen):
-    
-    def __init__(self, args, bufsize=0, executable=None, stdin=None,
-                 stdout=None, stderr=None, preexec_fn=None, close_fds=False,
-                 shell=False, cwd=None, env=None, universal_newlines=False,
-                 startupinfo=None, creationflags=0):
-        super(Kopen, self).__init__(args, bufsize, executable, stdin, stdout,
-                                    stderr, preexec_fn, close_fds, shell, cwd,
-                                    env, universal_newlines, startupinfo,
-                                    creationflags)
+class Popen(subprocess.Popen):
+    """Adapted from: http://stackoverflow.com/a/4896288/242451"""
 
-    def expect(self, s):
-        pass
+    def __init__(self, *args):
+        super(Popen, self).__init__(
+            args, stdout=PIPE, stderr=STDOUT,
+            bufsize=1, close_fds=True)
+        self.queue = Queue()
+        self.reader = Thread(target=self.enqueue_output)
+        self.reader.daemon = True
+        self.reader.start()
 
-try:
-    from Queue import Queue, Empty
-except ImportError:
-    from queue import Queue, Empty  # python 3.x
+    def enqueue_output(self):
+        for line in iter(self.stdout.readline, b''):
+            self.queue.put(line)
+        self.stdout.close()
 
-ON_POSIX = 'posix' in sys.builtin_module_names
-
-def enqueue_output(out, queue):
-    for line in iter(out.readline, b''):
-        queue.put(line)
-    out.close()
-
-p = Popen(['myprogram.exe'], stdout=PIPE, bufsize=1, close_fds=ON_POSIX)
-q = Queue()
-t = Thread(target=enqueue_output, args=(p.stdout, q))
-t.daemon = True # thread dies with the program
-t.start()
-
-# ... do other things here
-
-# read line without blocking
-try:  line = q.get_nowait() # or q.get(timeout=.1)
-except Empty:
-    print('no output yet')
-else: # got line
-# ... do something with line
+    def expect(self, s, timeout=10):
+        start = time()
+        try:
+            while 1:
+                passed = time() - start
+                line = self.queue.get(timeout=timeout - passed)
+                if s in line:
+                    return line
+        except Empty:
+            raise Exception('Expected %r but not found')
 
 
+class Unbuffered(object):
+    """http://stackoverflow.com/a/107717/242451"""
 
+    def __init__(self, stream):
+        self.stream = stream
 
+    def write(self, data):
+        self.stream.write(data)
+        self.stream.flush()
 
-def start_process(name, cmd, first_line):
-    print 'Starting %s...' % name
-    p = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    time.sleep(SERVER_STARTUP_WAIT_TIME)
-    out = p.stdout.readline()
-    print out
-    assert first_line in out, p.stdout.read(-1)
-    return p
+    def __getattr__(self, attr):
+        return getattr(self.stream, attr)
 
 
 def run_test_program():
-    print 'immediate'
+    sys.stdout = Unbuffered(sys.stdout)
     print 'immediate'
     sleep(1)
     print 'after 1 second'
-    sleep(10)
+    sleep(5)
+    print 'after 5 seconds'
 
-
-def _time(s=''):
-    global start
-    now = time()
-    print s, now - start
-    start = now
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'test':
         run_test_program()
     else:
-        start = time()
-        p = subprocess.Popen([
+        k = Popen(
             sys.executable,
             os.path.abspath(__file__),
-            'test',
-        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        _time('subprocess')
-        # print p.stdout.readline()
-        # _time('readline')
-        while 1:
-            print p.stdout.read(1)
-            _time('read -1')
+            'test')
+        print k.expect('imm', 2)
+        print k.expect('1 sec', 2)
+        print k.expect('seconds', 6)
