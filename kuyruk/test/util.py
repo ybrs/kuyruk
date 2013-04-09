@@ -7,6 +7,7 @@ import subprocess
 from time import sleep
 from Queue import Queue
 from functools import wraps
+from itertools import takewhile
 
 from scripttest import TestFileEnvironment
 
@@ -109,3 +110,8 @@ def kill_pid(pid, signum=signal.SIGTERM):
     except OSError as e:
         if e.errno != 3:  # No such process
             raise
+
+
+def sleep_until(f, seconds=0.1):
+    while f():
+        sleep(seconds)
