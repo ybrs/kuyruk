@@ -18,6 +18,7 @@ def get_fully_qualified_function_name(f):
 
 
 def import_task(fully_qualified_function_name):
+    return resolve(fully_qualified_function_name)
     """Find and return the function for given function name."""
     module_name, func_name = split_function_name(fully_qualified_function_name)
     module = import_task_module(module_name)
@@ -70,3 +71,26 @@ def get_main_module():
     filename = os.path.basename(main_module.__file__)
     module_name = os.path.splitext(filename)[0]
     return main_module, module_name
+
+
+def resolve(s, importer=__import__):
+    """Resolve strings to objects using standard import and attribute syntax.
+
+    """
+    name = s.split('.')
+    used = name.pop(0)
+    try:
+        found = importer(used)
+        for frag in name:
+            used += '.' + frag
+            try:
+                found = getattr(found, frag)
+            except AttributeError:
+                importer(used)
+                found = getattr(found, frag)
+        return found
+    except ImportError:
+        e, tb = sys.exc_info()[1:]
+        v = ValueError('Cannot resolve %r: %s' % (s, e))
+        v.__cause__, v.__traceback__ = e, tb
+        raise v
