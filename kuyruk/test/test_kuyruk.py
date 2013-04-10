@@ -27,6 +27,12 @@ class KuyrukTestCase(unittest.TestCase):
         with run_kuyruk() as child:
             child.expect('hello world')
 
+    def test_class_task(self):
+        """Run class task"""
+        Cat.meow()
+        with run_kuyruk() as child:
+            child.expect('meow')
+
     def test_another_queue(self):
         """Run a task on different queue"""
         print_task2('hello another')
@@ -143,3 +149,10 @@ eager_called = []
 @kuyruk.task
 def rejecting_task():
     raise Reject
+
+
+class Cat(object):
+
+    @kuyruk.task
+    def meow(self):
+        print 'meow'
