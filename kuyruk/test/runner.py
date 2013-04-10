@@ -35,11 +35,19 @@ class Popen(subprocess.Popen):
         except Empty:
             raise Exception('Expected %r but not found' % s)
 
-    def expect_exit(self, exit_code):
-        self.wait()
-        if self.returncode != exit_code:
+    def expect_exit(self, exit_code, timeout=10):
+        start = time()
+        while 1:
+            returncode = self.poll()
+            if returncode is not None:
+                break
+            passed = time() - start
+            if passed > timeout:
+                raise Exception("Timeout while waiting for exit(%r)" % exit_code)
+
+        if returncode != exit_code:
             raise Exception('Expected exit(%i) but received exit(%i)' %
-                            (exit_code, self.returncode))
+                            (exit_code, returncode))
 
 
 class Unbuffered(object):
@@ -64,6 +72,7 @@ def run_test_program():
     sleep(3)
     print 'after 3 seconds'
     print 'bye'
+    sleep(2)
     sys.exit(2)
 
 
@@ -82,4 +91,4 @@ if __name__ == '__main__':
             print k.expect('oh no', 1)
         except Exception:
             print 'raised exception'
-        k.expect_exit(2)
+        k.expect_exit(2, 0.1)
